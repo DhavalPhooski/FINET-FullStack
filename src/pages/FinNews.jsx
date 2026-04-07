@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Newspaper, RefreshCw, ExternalLink, TrendingUp, AlertCircle } from 'lucide-react'
+import { Newspaper, RefreshCw, ExternalLink, TrendingUp, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react'
 import { FeatureInfoBadge } from '../components/FeatureTips'
+import { useJourney } from '../context/JourneyContext'
 
 import api from '../utils/api'
 
