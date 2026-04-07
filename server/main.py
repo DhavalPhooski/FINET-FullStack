@@ -9,6 +9,7 @@ import os
 import re
 import json
 import time
+import uuid
 import requests
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
@@ -23,7 +24,7 @@ from jose.utils import base64url_decode
 from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from models import Base, User, BudgetNode, Transaction, PortfolioItem, Loan
+from models import Base, User, BudgetNode, Transaction, PortfolioItem, Loan, CommunityPost, CommunityUpvote
 
 load_dotenv(override=True)
 
@@ -630,6 +631,153 @@ def get_market_pulse():
 
     data = cached("market_pulse", 300, _fetch)
     return {"data": data}
+
+
+# ─── COMMUNITY / SOCIAL INTELLIGENCE ────────────────────────────────────────
+
+@app.get("/api/community/posts")
+def get_community_posts(
+    category: str = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Fetch all community posts, optionally filtered by category. Includes user's vote status."""
+    query = db.query(CommunityPost).order_by(CommunityPost.created_at.desc())
+    
+    if category and category != "All":
+        category_map = {'Success Stories': 'success', 'Questions': 'question', 'Tips': 'tip', 'Discussions': 'discussion'}
+        cat_value = category_map.get(category)
+        if cat_value:
+            query = query.filter(CommunityPost.category == cat_value)
+    
+    posts = query.all()
+    
+    # Get current user's upvotes
+    my_upvotes = db.query(CommunityUpvote.post_id).filter(CommunityUpvote.user_id == current_user.id).all()
+    my_upvote_ids = {u[0] for u in my_upvotes}
+    
+    return {
+        "posts": [
+            {
+                "id": str(post.id),
+                "author": post.author.full_name or post.author.email.split('@')[0],
+                "avatar": "👤",  # Default avatar
+                "title": post.title,
+                "content": post.content,
+                "category": post.category,
+                "tag": post.category,
+                "tags": post.tags or [],
+                "votes": post.upvote_count,
+                "userVoted": str(post.id) in my_upvote_ids,
+                "comments": post.comment_count,
+                "time": _time_ago(post.created_at),
+                "hot": post.upvote_count > 100,
+                "authorBadge": None,  # Can add verification/mentor badges later
+            }
+            for post in posts
+        ]
+    }
+
+
+@app.post("/api/community/posts")
+def create_community_post(
+    req: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new community post."""
+    title = req.get("title", "").strip()
+    content = req.get("content", "").strip()
+    category = req.get("category", "discussion")
+    tags = req.get("tags", [])
+    
+    if not title or not content:
+        raise HTTPException(status_code=400, detail="Title and content are required")
+    
+    # Map category names to database values
+    category_map = {
+        'Query': 'question',
+        'Tactical Success': 'success',
+        'Intelligence Tip': 'tip',
+        'Open Discussion': 'discussion'
+    }
+    category = category_map.get(category, 'discussion')
+    
+    new_post = CommunityPost(
+        user_id=current_user.id,
+        title=title,
+        content=content,
+        category=category,
+        tags=tags if isinstance(tags, list) else []
+    )
+    db.add(new_post)
+    db.commit()
+    db.refresh(new_post)
+    
+    return {
+        "id": str(new_post.id),
+        "status": "success",
+        "message": "Post created successfully!"
+    }
+
+
+@app.post("/api/community/posts/{post_id}/upvote")
+def toggle_upvote(
+    post_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Add or remove an upvote for a post."""
+    try:
+        post_uuid = uuid.UUID(post_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid post ID")
+    
+    post = db.query(CommunityPost).filter(CommunityPost.id == post_uuid).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    # Check if user already upvoted
+    existing = db.query(CommunityUpvote).filter(
+        CommunityUpvote.user_id == current_user.id,
+        CommunityUpvote.post_id == post_uuid
+    ).first()
+    
+    if existing:
+        # Remove upvote
+        db.delete(existing)
+        post.upvote_count = max(0, post.upvote_count - 1)
+        action = "removed"
+    else:
+        # Add upvote
+        new_upvote = CommunityUpvote(user_id=current_user.id, post_id=post_uuid)
+        db.add(new_upvote)
+        post.upvote_count += 1
+        action = "added"
+    
+    db.commit()
+    return {"status": "success", "action": action, "votes": post.upvote_count}
+
+
+def _time_ago(dt):
+    """Convert datetime to 'X ago' format."""
+    if not dt:
+        return "now"
+    delta = datetime.utcnow() - dt
+    seconds = delta.total_seconds()
+    if seconds < 60:
+        return "now"
+    elif seconds < 3600:
+        mins = int(seconds // 60)
+        return f"{mins}m ago"
+    elif seconds < 86400:
+        hours = int(seconds // 3600)
+        return f"{hours}h ago"
+    elif seconds < 604800:
+        days = int(seconds // 86400)
+        return f"{days}d ago"
+    else:
+        return dt.strftime('%Y-%m-%d')
 
 
 @app.get("/api/health")

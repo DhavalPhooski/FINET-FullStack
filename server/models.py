@@ -80,3 +80,32 @@ class Loan(Base):
     emi = Column(Float)
 
     owner = relationship("User", back_populates="loans")
+
+# ─── SOCIAL INTELLIGENCE (Community Posts) ──────────────────────────────────
+
+class CommunityPost(Base):
+    __tablename__ = "community_posts"
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    content = Column(String, nullable=False)
+    category = Column(String, nullable=False)  # 'success', 'question', 'tip', 'discussion'
+    tags = Column(JSON, default=list)
+    upvote_count = Column(Integer, default=0)
+    comment_count = Column(Integer, default=0)
+    created_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow, index=True)
+    updated_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+
+    author = relationship("User", backref="community_posts")
+
+class CommunityUpvote(Base):
+    __tablename__ = "community_upvotes"
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
+    post_id = Column(Uuid, ForeignKey("community_posts.id"), nullable=False, index=True)
+    created_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (
+        # UNIQUE constraint: each user can upvote a post only once
+        # This would need to be handled at DB level, but we'll validate in code
+    )

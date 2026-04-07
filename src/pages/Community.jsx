@@ -1,36 +1,108 @@
-import React, { useState } from 'react'
-import { COMMUNITY_POSTS, CHALLENGES, ACHIEVEMENTS } from '../data/appData'
-import { Users2, MessageSquare, Award, Flame, Zap, ArrowUp, Plus, History, CheckCircle2, ShieldCheck, Trophy, Edit3, Activity, Compass } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Users2, MessageSquare, Award, Flame, Zap, ArrowUp, Plus, History, CheckCircle2, ShieldCheck, Trophy, Edit3, Activity, Compass, Loader } from 'lucide-react'
+import api from '../utils/api'
 
 const TAG_COLORS = { success: 'badge-green', question: 'badge-cyan', tip: 'badge-purple', discussion: 'badge-yellow' }
 const TABS = ['All', 'Success Stories', 'Questions', 'Tips', 'Discussions']
 
 export default function Community() {
     const [tab, setTab] = useState('All')
-    const [votes, setVotes] = useState({})
-    const [joined, setJoined] = useState({})
+    const [posts, setPosts] = useState([])
+    const [loading, setLoading] = useState(true)
     const [showPost, setShowPost] = useState(false)
     const [expandedId, setExpandedId] = useState(null)
+    const [newPostTitle, setNewPostTitle] = useState('')
+    const [newPostContent, setNewPostContent] = useState('')
+    const [newPostCategory, setNewPostCategory] = useState('Query')
+    const [creatingPost, setCreatingPost] = useState(false)
+    const [error, setError] = useState('')
 
-    const filtered = COMMUNITY_POSTS.filter(p => {
-        if (tab === 'All') return true
-        const map = { 'Success Stories': 'success', 'Questions': 'question', 'Tips': 'tip', 'Discussions': 'discussion' }
-        return p.tag === map[tab]
-    })
+    // Fetch posts on mount and when tab changes
+    useEffect(() => {
+        fetchPosts()
+    }, [tab])
 
-    const votePost = (id) => {
-        setVotes(prev => ({ ...prev, [id]: !prev[id] }))
+    const fetchPosts = async () => {
+        setLoading(true)
+        setError('')
+        try {
+            const response = await api.get('/community/posts', {
+                params: { category: tab }
+            })
+            setPosts(response.data.posts || [])
+        } catch (err) {
+            console.error('Failed to fetch posts:', err)
+            setError('Failed to load posts. Please try again.')
+        } finally {
+            setLoading(false)
+        }
     }
+
+    const handleUpvote = async (postId) => {
+        try {
+            const response = await api.post(`/community/posts/${postId}/upvote`)
+            
+            // Update local state
+            setPosts(prevPosts => prevPosts.map(post => {
+                if (post.id === postId) {
+                    return {
+                        ...post,
+                        votes: response.data.votes,
+                        userVoted: !post.userVoted
+                    }
+                }
+                return post
+            }))
+        } catch (err) {
+            console.error('Failed to upvote post:', err)
+        }
+    }
+
+    const handleCreatePost = async (e) => {
+        e.preventDefault()
+        if (!newPostTitle.trim() || !newPostContent.trim()) {
+            setError('Title and content are required')
+            return
+        }
+
+        setCreatingPost(true)
+        setError('')
+        
+        try {
+            await api.post('/community/posts', {
+                title: newPostTitle,
+                content: newPostContent,
+                category: newPostCategory
+            })
+
+            // Reset form and fetch updated posts
+            setNewPostTitle('')
+            setNewPostContent('')
+            setNewPostCategory('Query')
+            setShowPost(false)
+            await fetchPosts()
+        } catch (err) {
+            console.error('Failed to create post:', err)
+            setError('Failed to create post. Please try again.')
+        } finally {
+            setCreatingPost(false)
+        }
+    }
+
+    const filtered = posts.filter(p => {
+        if (tab === 'All') return true
+        return p.category === p.tag
+    })
 
     return (
         <div className="anim-fade">
             <div style={{ marginBottom: 48, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
                     <h1 style={{ fontSize: '1.8rem', marginBottom: 6, fontWeight: 500, letterSpacing: '-0.04em' }}>Social Intelligence</h1>
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Peer learning synapses and collective capital optimization.</p>
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Real people sharing real journeys. Get upvoted for insights that move the community.</p>
                 </div>
                 <button className="btn btn-primary" onClick={() => setShowPost(true)} style={{ padding: '8px 16px', fontSize: '0.8rem' }}>
-                    <Plus size={16} style={{ marginRight: 4 }} /> TRANSMIT SIGNAL
+                    <Plus size={16} style={{ marginRight: 4 }} /> SHARE YOUR JOURNEY
                 </button>
             </div>
 
@@ -44,23 +116,37 @@ export default function Community() {
                         ))}
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {filtered.map(post => {
-                            const voted = votes[post.id]
-                            const count = post.votes + (voted ? 1 : 0)
-                            return (
+                    {error && (
+                        <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 'var(--radius-sm)', marginBottom: 16, color: 'rgb(239, 68, 68)', fontSize: '0.9rem' }}>
+                            {error}
+                        </div>
+                    )}
+
+                    {loading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '300px', gap: 12, color: 'var(--text-muted)' }}>
+                            <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} />
+                            Loading posts...
+                        </div>
+                    ) : filtered.length === 0 ? (
+                        <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <p style={{ fontSize: '0.95rem' }}>No posts yet in this category.</p>
+                            <p style={{ fontSize: '0.85rem', marginTop: 8 }}>Be the first to share your journey! 🚀</p>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {filtered.map(post => (
                                 <div key={post.id} className="card" style={{ display: 'flex', gap: 16, padding: '24px', background: 'var(--bg-deep)' }}>
                                     {/* Vote button */}
                                     <button
-                                        onClick={() => votePost(post.id)}
+                                        onClick={() => handleUpvote(post.id)}
                                         style={{
-                                            background: voted ? 'rgba(255,255,255,0.05)' : 'transparent',
-                                            border: `1px solid ${voted ? 'var(--text-primary)' : 'rgba(255,255,255,0.1)'}`,
+                                            background: post.userVoted ? 'rgba(255,255,255,0.05)' : 'transparent',
+                                            border: `1px solid ${post.userVoted ? 'var(--text-primary)' : 'rgba(255,255,255,0.1)'}`,
                                             borderRadius: 'var(--radius-sm)', width: 48, height: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 8, cursor: 'pointer', flexShrink: 0,
-                                            transition: 'all 0.2s', color: voted ? 'var(--text-primary)' : 'var(--text-muted)'
+                                            transition: 'all 0.2s', color: post.userVoted ? 'var(--text-primary)' : 'var(--text-muted)'
                                         }}>
                                         <ArrowUp size={16} style={{ marginBottom: 4 }} />
-                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{count}</span>
+                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{post.votes}</span>
                                     </button>
 
                                     {/* Content */}
@@ -89,7 +175,9 @@ export default function Community() {
                                         </div>
 
                                         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                                            {post.tags.map(t => <span key={t} style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 4 }}>#{t.toUpperCase()}</span>)}
+                                            {post.tags && post.tags.map(t => (
+                                                <span key={t} style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 4 }}>#{t.toUpperCase()}</span>
+                                            ))}
                                         </div>
 
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
@@ -103,49 +191,20 @@ export default function Community() {
                                         </div>
                                     </div>
                                 </div>
-                            )
-                        })}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Right: Sidebar */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                    {/* Active Challenges */}
-                    <div className="card">
-                        <div className="section-title" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Zap size={16} color="var(--accent-indigo)" /> ACTIVE DIRECTIVES</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {CHALLENGES.map(c => (
-                                <div key={c.id} style={{ padding: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 'var(--radius-sm)' }}>
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                                        <div style={{ fontSize: '1.2rem', marginTop: 2 }}>{c.icon}</div>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 4, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>{c.title}</div>
-                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'var(--font-mono)' }}>{c.participants.toLocaleString()} ENGAGED · {c.duration.toUpperCase()}</div>
-                                            <div style={{ fontSize: '0.7rem', color: 'var(--yellow)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                <Trophy size={10} /> {c.reward.toUpperCase()}
-                                            </div>
-                                        </div>
-                                        <button
-                                            className={`btn btn-sm ${joined[c.id] ? 'btn-secondary' : 'btn-primary'}`}
-                                            style={{ padding: '4px 10px', fontSize: '0.7rem' }}
-                                            onClick={() => setJoined(prev => ({ ...prev, [c.id]: !prev[c.id] }))}
-                                        >
-                                            {joined[c.id] ? 'ACTIVE' : 'JOIN'}
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Community stats */}
+                    {/* Community Stats */}
                     <div className="card">
                         <div className="section-title" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Activity size={16} color="var(--text-muted)" /> NETWORK STATUS</div>
                         {[
-                            ['NODES CONNECTED', '1,247'],
-                            ['SIGNALS / WEEK', '94'],
-                            ['DIRECTIVES', '4'],
-                            ['MENTORS ONLINE', '12'],
+                            ['TOTAL TALKS', posts.length.toString()],
+                            ['HOT POSTS', posts.filter(p => p.hot).length.toString()],
+                            ['YOUR UPVOTES', posts.filter(p => p.userVoted).length.toString()],
                         ].map(([label, val]) => (
                             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
                                 <span style={{ color: 'var(--text-muted)' }}>{label}</span>
@@ -154,52 +213,110 @@ export default function Community() {
                         ))}
                     </div>
 
-                    {/* Achievements */}
+                    {/* Info Card */}
                     <div className="card">
-                        <div className="section-title" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Award size={16} color="var(--yellow)" /> VALIDATION BADGES</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
-                            {ACHIEVEMENTS.map(a => (
-                                <div key={a.id} style={{ opacity: a.earned ? 1 : 0.2, textAlign: 'center', padding: '8px 0' }} title={a.desc}>
-                                    <div style={{ fontSize: '1.5rem', marginBottom: 4 }}>{a.icon}</div>
-                                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{a.name.split(' ')[0]}</div>
-                                </div>
-                            ))}
+                        <div className="section-title" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}><Compass size={16} color="var(--accent-indigo)" /> HOW IT WORKS</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+                            <div style={{ marginBottom: 12 }}>
+                                <strong style={{ color: 'var(--text-primary)' }}>🚀 Share</strong><br />
+                                Post your wins, questions, or insights
+                            </div>
+                            <div style={{ marginBottom: 12 }}>
+                                <strong style={{ color: 'var(--text-primary)' }}>👍 Vote</strong><br />
+                                Upvote talks that helped you
+                            </div>
+                            <div>
+                                <strong style={{ color: 'var(--text-primary)' }}>🌟 Learn</strong><br />
+                                See what the community values
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* New Post modal */}
+            {/* New Post Modal */}
             {showPost && (
                 <div className="modal-overlay" onClick={() => setShowPost(false)}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-title" style={{ fontSize: '1.2rem', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Edit3 size={18} /> INITIATE SIGNAL
+                            <Edit3 size={18} /> SHARE YOUR JOURNEY
                         </div>
+
+                        {error && (
+                            <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 'var(--radius-sm)', marginBottom: 16, color: 'rgb(239, 68, 68)', fontSize: '0.9rem' }}>
+                                {error}
+                            </div>
+                        )}
+
                         <div className="input-group" style={{ marginBottom: 16 }}>
-                            <label className="input-label">Signal Header</label>
-                            <input className="input" placeholder="Define the core objective..." />
+                            <label className="input-label">Title</label>
+                            <input 
+                                className="input" 
+                                placeholder="What's your story?" 
+                                value={newPostTitle}
+                                onChange={e => setNewPostTitle(e.target.value)}
+                            />
                         </div>
+
                         <div className="input-group" style={{ marginBottom: 16 }}>
-                            <label className="input-label">Payload Data</label>
-                            <textarea className="input" rows={5} placeholder="Transmit your analysis, queries, or tactical insights..." style={{ resize: 'vertical' }} />
+                            <label className="input-label">Story</label>
+                            <textarea 
+                                className="input" 
+                                rows={5} 
+                                placeholder="Share your experience, question, or insight..." 
+                                style={{ resize: 'vertical' }}
+                                value={newPostContent}
+                                onChange={e => setNewPostContent(e.target.value)}
+                            />
                         </div>
+
                         <div className="input-group" style={{ marginBottom: 24 }}>
-                            <label className="input-label">Classification Tag</label>
-                            <select className="input">
+                            <label className="input-label">Type</label>
+                            <select 
+                                className="input"
+                                value={newPostCategory}
+                                onChange={e => setNewPostCategory(e.target.value)}
+                            >
                                 <option>Query</option>
                                 <option>Tactical Success</option>
                                 <option>Intelligence Tip</option>
                                 <option>Open Discussion</option>
                             </select>
                         </div>
+
                         <div style={{ display: 'flex', gap: 12 }}>
-                            <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setShowPost(false)}>TRANSMIT</button>
-                            <button className="btn btn-secondary" onClick={() => setShowPost(false)}>ABORT</button>
+                            <button 
+                                className="btn btn-primary" 
+                                style={{ flex: 1 }} 
+                                onClick={handleCreatePost}
+                                disabled={creatingPost}
+                            >
+                                {creatingPost ? (
+                                    <>
+                                        <Loader size={14} style={{ marginRight: 4, animation: 'spin 1s linear infinite', display: 'inline' }} />
+                                        SHARING...
+                                    </>
+                                ) : (
+                                    'SHARE WITH COMMUNITY'
+                                )}
+                            </button>
+                            <button 
+                                className="btn btn-secondary" 
+                                onClick={() => setShowPost(false)}
+                                disabled={creatingPost}
+                            >
+                                CANCEL
+                            </button>
                         </div>
                     </div>
                 </div>
             )}
+
+            <style>{`
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+            `}</style>
         </div>
     )
-}
