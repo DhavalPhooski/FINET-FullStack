@@ -320,3 +320,4 @@ export default function Community() {
             `}</style>
         </div>
     )
+}
