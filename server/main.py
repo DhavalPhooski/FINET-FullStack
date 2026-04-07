@@ -111,9 +111,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET is not configured")
 
     try:
-        payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=[SUPABASE_JWT_ALGORITHM], options={"verify_aud": False})
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        # Try HS256 first (standard Supabase)
+        payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
+    except JWTError as e:
+        try:
+            # Fallback to ES256 (some Supabase configs)
+            payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["ES256"], options={"verify_aud": False})
+        except JWTError as e2:
+            print(f"[Auth Error] JWT validation failed - HS256: {str(e)}, ES256: {str(e2)}")
+            raise HTTPException(status_code=401, detail="Invalid token")
 
     email = payload.get("email")
     if not email:

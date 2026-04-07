@@ -8,8 +8,11 @@ const api = axios.create({
 api.interceptors.request.use(async (config) => {
   const { data } = await supabase.auth.getSession()
   const token = data?.session?.access_token
+  console.log('[API Interceptor] Token:', token ? `✓ present (${token.substring(0, 20)}...)` : '✗ missing')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  } else {
+    console.warn('[API Interceptor] No token found - user may not be logged in')
   }
   return config
 }, (error) => Promise.reject(error))
