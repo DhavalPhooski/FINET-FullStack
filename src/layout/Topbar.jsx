@@ -1,12 +1,12 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMarketData } from '../hooks/useMarketData'
-import { Wallet, Flame, Bell, Sparkles } from 'lucide-react'
+import { Wallet, Flame, Bell, Sparkles, Menu } from 'lucide-react'
 import { useJourney } from '../context/JourneyContext'
 import { useAuth } from '../hooks/useAuth'
 import { AppContext } from '../App'
 
-export default function Topbar() {
+export default function Topbar({ onToggleMenu }) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { journey } = useJourney()
@@ -25,7 +25,12 @@ export default function Topbar() {
   return (
     <header className="topbar">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 700, textTransform: 'uppercase' }}>FINANCE / {window.location.pathname.replace('/','').toUpperCase() || 'OVERVIEW'}</div>
+        <button type="button" className="mobile-menu-button" onClick={onToggleMenu} aria-label="Open menu">
+          <Menu size={18} />
+        </button>
+        <div className="topbar-title" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 700, textTransform: 'uppercase' }}>
+          FINANCE / {window.location.pathname.replace('/','').toUpperCase() || 'OVERVIEW'}
+        </div>
       </div>
 
       {/* 2. System Status & Profile */}

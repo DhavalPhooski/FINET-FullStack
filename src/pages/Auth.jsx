@@ -41,14 +41,13 @@ export default function Auth() {
   }
 
   return (
-    <div style={{
+    <div className="auth-shell" style={{
       minHeight: '100vh',
-      display: 'flex',
       background: 'radial-gradient(circle at top right, rgba(99, 102, 241, 0.15), transparent), radial-gradient(circle at bottom left, rgba(79, 70, 229, 0.1), transparent), #09090b',
       color: '#fff',
       fontFamily: 'Outfit, sans-serif'
     }}>
-      <div style={{
+      <div className="auth-info" style={{
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
@@ -87,7 +86,7 @@ export default function Auth() {
             Legacy login/register has been removed. Continue with the Supabase integration in `SUPABASE_AUTH_CHECKLIST.md`.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="feature-list" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
              {[
                { icon: Sparkles, text: 'Supabase email/password login' },
                { icon: ArrowRight, text: 'Secure session management' },
@@ -103,14 +102,14 @@ export default function Auth() {
         </div>
       </div>
 
-      <div style={{
+      <div className="auth-card-wrapper" style={{
         flex: 1,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '40px'
       }}>
-        <div style={{
+        <div className="auth-card" style={{
           width: '100%',
           maxWidth: 420,
           background: 'rgba(255,255,255,0.03)',
@@ -229,7 +228,94 @@ export default function Auth() {
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap');
+
+        .auth-shell {
+          width: 100%;
+          min-height: 100vh;
+          display: grid;
+          grid-template-columns: 1.1fr 0.9fr;
+          overflow: hidden;
+        }
+
+        .auth-info {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          padding: 0 80px;
+          border-right: 1px solid rgba(255,255,255,0.06);
+          position: relative;
+          overflow: hidden;
+        }
+
+        .auth-card-wrapper {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 40px;
+        }
+
+        .auth-card {
+          width: 100%;
+          max-width: 420px;
+          background: rgba(255,255,255,0.03);
+          backdrop-filter: blur(20px);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 24px;
+          padding: 48px;
+          box-shadow: 0 32px 64px rgba(0,0,0,0.4);
+          position: relative;
+        }
+
+        .auth-info h2 {
+          font-size: 3rem;
+        }
+
+        .auth-info p {
+          max-width: 480px;
+        }
+
+        @media (max-width: 880px) {
+          .auth-shell {
+            display: block;
+          }
+
+          .auth-info {
+            padding: 42px 24px 30px;
+            border-right: none;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+          }
+
+          .auth-card-wrapper {
+            padding: 24px 18px 36px;
+          }
+
+          .auth-card {
+            padding: 32px;
+            border-radius: 22px;
+          }
+
+          .auth-info h2 {
+            font-size: 2.2rem;
+          }
+
+          .auth-info p {
+            max-width: 100%;
+          }
+
+          .feature-list {
+            gap: 16px;
+          }
+
+          .auth-card form {
+            gap: 16px;
+          }
+
+          button[type="submit"] {
+            width: 100%;
+          }
+        }
       `}</style>
     </div>
   )
 }
+

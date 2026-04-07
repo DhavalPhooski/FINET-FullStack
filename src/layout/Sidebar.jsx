@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Network, PieChart,
   Users, Newspaper, Users2,
-  TrendingUp, Landmark, Zap, Sparkles, LogOut, ChevronRight, FileText
+  TrendingUp, Landmark, Zap, Sparkles, LogOut, ChevronRight, FileText, X
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useJourney } from '../context/JourneyContext'
@@ -42,13 +42,18 @@ function NavItem({ n }) {
   )
 }
 
-export default function Sidebar() {
+export default function Sidebar({ open, onClose }) {
   const { user, logout } = useAuth()
   const { journey, levelProgress, xpInLevel, xpToNextLevel } = useJourney()
   const profile = journey?.profile
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${open ? ' mobile-open' : ''}`}>
+      <div className="sidebar-mobile-header">
+        <button type="button" className="sidebar-close" onClick={onClose} aria-label="Close menu">
+          <X size={18} />
+        </button>
+      </div>
       {/* Logo */}
       <div className="nav-logo" style={{ marginBottom: 28 }}>
         <div style={{ padding: 6, background: 'linear-gradient(135deg, var(--accent-indigo), var(--accent-purple))', borderRadius: 8, display: 'flex' }}>

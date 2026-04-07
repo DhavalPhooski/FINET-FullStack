@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
@@ -14,11 +14,14 @@ function PageTracker() {
 }
 
 export default function AppLayout({ children }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
   return (
     <div className="app-shell">
-      <Sidebar />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className={`mobile-backdrop${sidebarOpen ? ' open' : ''}`} onClick={() => setSidebarOpen(false)} />
       <div className="main-area">
-        <Topbar />
+        <Topbar onToggleMenu={() => setSidebarOpen((current) => !current)} />
         <main className="page-content">
           <PageTracker />
           {children}
