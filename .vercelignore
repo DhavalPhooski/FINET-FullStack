@@ -1,0 +1,12 @@
+# Global Vercel Deployment Exclusions
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+finet.db
+.git/
+.env
+
+# Local build artifacts (Vercel builds its own)
+client/dist/
+dist/
