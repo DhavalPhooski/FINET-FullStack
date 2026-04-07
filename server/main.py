@@ -162,11 +162,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise HTTPException(status_code=401, detail=f"Unsupported token algorithm: {alg}")
 
     # Extract user ID from JWT (Supabase uses 'sub' claim for user UUID)
-    user_id = payload.get("sub")
+    raw_user_id = payload.get("sub")
     email = payload.get("email")
     
-    if not user_id:
+    if not raw_user_id:
         raise HTTPException(status_code=401, detail="Invalid token: missing user ID")
+
+    try:
+        user_id = str(uuid.UUID(raw_user_id))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid token user ID")
 
     # Fetch or create user in database
     try:
@@ -665,6 +670,20 @@ def get_market_pulse():
 
 # ─── COMMUNITY / SOCIAL INTELLIGENCE ────────────────────────────────────────
 
+def _normalize_tags(raw_tags):
+    if raw_tags is None:
+        return []
+    if isinstance(raw_tags, list):
+        return raw_tags
+    if isinstance(raw_tags, str):
+        try:
+            return json.loads(raw_tags)
+        except Exception:
+            cleaned = raw_tags.strip('{}')
+            return [t.strip() for t in cleaned.split(',') if t.strip()]
+    return []
+
+
 @app.get("/api/community/posts")
 def get_community_posts(
     category: str = None,
@@ -700,7 +719,7 @@ def get_community_posts(
                 "content": post.content,
                 "category": post.category,
                 "tag": post.category,
-                "tags": post.tags or [],
+                "tags": _normalize_tags(post.tags),
                 "votes": post.upvote_count,
                 "userVoted": str(post.id) in my_upvote_ids,
                 "comments": post.comment_count,
@@ -720,8 +739,8 @@ def create_community_post(
     db: Session = Depends(get_db)
 ):
     """Create a new community post."""
-    title = req.get("title", "").strip()
-    content = req.get("content", "").strip()
+    title = (req.get("title") or "").strip()
+    content = (req.get("content") or "").strip()
     category = req.get("category", "discussion")
     tags = req.get("tags", [])
     
@@ -736,17 +755,27 @@ def create_community_post(
         'Open Discussion': 'discussion'
     }
     category = category_map.get(category, 'discussion')
+
+    if isinstance(tags, str):
+        tags = [t.strip() for t in tags.split(',') if t.strip()]
+    if not isinstance(tags, list):
+        tags = []
     
-    new_post = CommunityPost(
-        user_id=current_user.id,
-        title=title,
-        content=content,
-        category=category,
-        tags=tags if isinstance(tags, list) else []
-    )
-    db.add(new_post)
-    db.commit()
-    db.refresh(new_post)
+    try:
+        new_post = CommunityPost(
+            user_id=current_user.id,
+            title=title,
+            content=content,
+            category=category,
+            tags=tags
+        )
+        db.add(new_post)
+        db.commit()
+        db.refresh(new_post)
+    except Exception as exc:
+        db.rollback()
+        print(f"[Community] create post failed: {exc}")
+        raise HTTPException(status_code=500, detail="Unable to create post")
     
     return {
         "id": str(new_post.id),

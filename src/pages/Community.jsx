@@ -89,9 +89,16 @@ export default function Community() {
         }
     }
 
+    const TAB_CATEGORY_MAP = {
+        'Success Stories': 'success',
+        'Questions': 'question',
+        'Tips': 'tip',
+        'Discussions': 'discussion'
+    }
+
     const filtered = posts.filter(p => {
         if (tab === 'All') return true
-        return p.category === p.tag
+        return p.category === TAB_CATEGORY_MAP[tab]
     })
 
     return (
