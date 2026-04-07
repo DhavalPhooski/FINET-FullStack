@@ -18,7 +18,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jose import JWTError, jwt, jwk
+from jose.utils import base64url_decode
 from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -31,12 +32,53 @@ GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "").strip().strip('"').strip("'"
 NEWS_API_KEY      = os.getenv("NEWS_API_KEY", "")
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY", "")
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip().strip('"').strip("'")
+SUPABASE_URL = os.getenv("SUPABASE_URL", os.getenv("VITE_SUPABASE_URL", "")).strip().strip('"').strip("'")
+SUPABASE_JWKS_URL = os.getenv("SUPABASE_JWKS_URL", "").strip().strip('"').strip("'") or (f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else "")
 SUPABASE_JWT_ALGORITHM = "HS256"
+JWKS_CACHE = {"keys": [], "fetched_at": 0}
+
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     print(f"[System] Gemini active (Key ends in: ...{GEMINI_API_KEY[-4:]})")
 else:
     print("[System] CRITICAL: GEMINI_API_KEY not found in .env")
+
+
+# ─── JWT Utilities ─────────────────────────────────────────────────────────────
+
+def fetch_jwks():
+    if not SUPABASE_JWKS_URL:
+        raise RuntimeError("SUPABASE_URL or SUPABASE_JWKS_URL is not configured for Supabase JWT verification")
+
+    now = time.time()
+    if JWKS_CACHE["keys"] and now - JWKS_CACHE["fetched_at"] < 3600:
+        return JWKS_CACHE["keys"]
+
+    resp = requests.get(SUPABASE_JWKS_URL, timeout=10)
+    resp.raise_for_status()
+    jwks = resp.json().get("keys", [])
+    JWKS_CACHE["keys"] = jwks
+    JWKS_CACHE["fetched_at"] = now
+    return jwks
+
+
+def get_jwks_key(token):
+    try:
+        header = jwt.get_unverified_header(token)
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token header")
+
+    kid = header.get("kid")
+    alg = header.get("alg")
+    if not kid or not alg:
+        raise HTTPException(status_code=401, detail="Invalid token header")
+
+    keys = fetch_jwks()
+    for key in keys:
+        if key.get("kid") == kid:
+            return key, alg
+
+    raise HTTPException(status_code=401, detail="Unable to resolve token signing key")
 
 
 # ─── Database ──────────────────────────────────────────────────────────────────
@@ -107,19 +149,45 @@ def get_db():
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    if not SUPABASE_JWT_SECRET:
-        raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET is not configured")
+    if not token:
+        raise HTTPException(status_code=401, detail="Authorization token missing")
 
     try:
-        # Try HS256 first (standard Supabase)
-        payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
-    except JWTError as e:
+        header = jwt.get_unverified_header(token)
+        alg = header.get("alg")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token header")
+
+    payload = None
+    if alg == "HS256":
+        if not SUPABASE_JWT_SECRET:
+            raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET is not configured")
         try:
-            # Fallback to ES256 (some Supabase configs)
-            payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["ES256"], options={"verify_aud": False})
-        except JWTError as e2:
-            print(f"[Auth Error] JWT validation failed - HS256: {str(e)}, ES256: {str(e2)}")
+            payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
+        except JWTError as e:
+            print(f"[Auth Error] HS256 decode failed: {e}")
             raise HTTPException(status_code=401, detail="Invalid token")
+    elif alg in {"RS256", "ES256"}:
+        if not SUPABASE_JWKS_URL:
+            raise HTTPException(status_code=500, detail="SUPABASE_URL or SUPABASE_JWKS_URL is not configured for Supabase JWT verification")
+
+        jwk_data = None
+        try:
+            key, header_alg = get_jwks_key(token)
+            jwk_data = key
+            key_obj = jwk.construct(jwk_data, algorithm=alg)
+            key_to_use = key_obj.to_pem() if hasattr(key_obj, 'to_pem') else key_obj
+            payload = jwt.decode(token, key_to_use, algorithms=[alg], options={"verify_aud": False})
+        except JWTError as e:
+            print(f"[Auth Error] {alg} JWT validation failed: {e}")
+            raise HTTPException(status_code=401, detail="Invalid token")
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[Auth Error] JWKS verification failed: {e}")
+            raise HTTPException(status_code=401, detail="Invalid token")
+    else:
+        raise HTTPException(status_code=401, detail=f"Unsupported token algorithm: {alg}")
 
     email = payload.get("email")
     if not email:

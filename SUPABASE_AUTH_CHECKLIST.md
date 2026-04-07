@@ -42,9 +42,11 @@ Follow these steps in order. Mark each completed item with `✅` or let me know 
   ```env
   VITE_SUPABASE_URL=https://your-project-ref.supabase.co
   VITE_SUPABASE_ANON_KEY=your-anon-key
+  SUPABASE_URL=https://your-project-ref.supabase.co
   SUPABASE_JWT_SECRET=your-jwt-secret
   ```
 - [x] Save the file and keep it private
+- [x] Add the same values in Vercel project settings if deploying
 
 ### Step 4: Install backend dependencies
 - [x] Run in the backend environment:
