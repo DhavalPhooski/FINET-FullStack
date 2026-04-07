@@ -1,17 +1,18 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON, Uuid, TIMESTAMP
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
+import uuid
 
 Base = declarative_base()
 
 class User(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=True) # For Google Login
-    phone = Column(String, unique=True, index=True, nullable=True) # For Phone Login
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
+    email = Column(String, unique=True, index=True, nullable=True)
+    phone = Column(String, unique=True, index=True, nullable=True)
     hashed_password = Column(String, nullable=True)
     full_name = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
 
     # Journey / Gamification fields
     xp = Column(Integer, default=0)
@@ -33,7 +34,7 @@ class User(Base):
 class BudgetNode(Base):
     __tablename__ = "budget_nodes"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Uuid, ForeignKey("users.id"), nullable=False)
     name = Column(String, index=True)
     percent = Column(Float)
     color = Column(String)
@@ -44,11 +45,11 @@ class BudgetNode(Base):
 class Transaction(Base):
     __tablename__ = "transactions"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Uuid, ForeignKey("users.id"), nullable=False)
     title = Column(String)
     amount = Column(Float)
     category = Column(String)
-    date = Column(DateTime, default=datetime.utcnow)
+    date = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     note = Column(String, nullable=True)
 
     owner = relationship("User", back_populates="transactions")
@@ -56,7 +57,7 @@ class Transaction(Base):
 class PortfolioItem(Base):
     __tablename__ = "portfolio_items"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Uuid, ForeignKey("users.id"), nullable=False)
     name = Column(String)
     type = Column(String)
     invested = Column(Float)
@@ -69,7 +70,7 @@ class PortfolioItem(Base):
 class Loan(Base):
     __tablename__ = "loans"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Uuid, ForeignKey("users.id"), nullable=False)
     name = Column(String)
     bank = Column(String)
     principal = Column(Float)

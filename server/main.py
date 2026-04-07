@@ -82,59 +82,30 @@ def get_jwks_key(token):
 
 
 # ─── Database ──────────────────────────────────────────────────────────────────
-_DB_URL = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL") or "sqlite:///./finet.db"
+# Supabase PostgreSQL connection
+SUPABASE_DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD", "")
+SUPABASE_PROJECT_ID = "rznbqthumdlmnkrfytxi"  # From your SUPABASE_URL
 
-# Vercel-specific: If SQLite and we are on Vercel, move DB to /tmp
-if "sqlite" in _DB_URL and os.environ.get("VERCEL"):
-    _DB_URL = "sqlite:////tmp/finet.db"
+if SUPABASE_DB_PASSWORD:
+    _DB_URL = f"postgresql://postgres:{SUPABASE_DB_PASSWORD}@db.{SUPABASE_PROJECT_ID}.supabase.co:5432/postgres"
+else:
+    _DB_URL = os.getenv("DATABASE_URL", "")
 
-# Vercel Postgres uses 'postgres://' which SQLAlchemy needs as 'postgresql://'
-if _DB_URL.startswith("postgres://"):
-    _DB_URL = _DB_URL.replace("postgres://", "postgresql://", 1)
+if not _DB_URL:
+    raise RuntimeError("SUPABASE_DB_PASSWORD or DATABASE_URL is required to connect to Supabase PostgreSQL")
 
+# SQLAlchemy connection
 SQLALCHEMY_DATABASE_URL = _DB_URL
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {})
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine)
 
-# ─── Simple In-App Migration (Auto-add missing columns) ────────────────────────
+print(f"[System] Connected to Supabase PostgreSQL")
+
+# ─── Skip In-App Migration (Supabase has schema) ────────────────────────────────
 def run_migrations():
-    import sqlite3
-    db_path = "./finet.db"
-    if os.environ.get("VERCEL"):
-        db_path = "/tmp/finet.db"
-    
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # Check if 'xp' exists in 'users' table
-    cursor.execute("PRAGMA table_info(users)")
-    columns = [row[1] for row in cursor.fetchall()]
-    
-    if "xp" not in columns:
-        print("[System] Outdated database detected. Applying auto-migration...")
-        try:
-            # Add all journey-related columns one by one
-            # Note: SQLite ALTER TABLE only adds one column at a time
-            alter_cmds = [
-                "ALTER TABLE users ADD COLUMN xp INTEGER DEFAULT 0",
-                "ALTER TABLE users ADD COLUMN level INTEGER DEFAULT 1",
-                "ALTER TABLE users ADD COLUMN profile_json JSON",
-                "ALTER TABLE users ADD COLUMN seen_onboarding INTEGER DEFAULT 0",
-                "ALTER TABLE users ADD COLUMN visited_pages_json JSON DEFAULT '[]'",
-                "ALTER TABLE users ADD COLUMN completed_actions_json JSON DEFAULT '[]'",
-                "ALTER TABLE users ADD COLUMN roadmap_done_json JSON DEFAULT '[]'",
-                "ALTER TABLE users ADD COLUMN last_visit TEXT",
-                "ALTER TABLE users ADD COLUMN streak INTEGER DEFAULT 0"
-            ]
-            for cmd in alter_cmds:
-                try: cursor.execute(cmd)
-                except: pass # Column might already exist
-            conn.commit()
-            print("[System] Database schema successfully synchronized.")
-        except Exception as e:
-            print(f"[System] Migration warning: {e}")
-    conn.close()
+    """Supabase PostgreSQL schema is managed via SQL. No auto-migration needed."""
+    print("[System] Using Supabase PostgreSQL schema (no auto-migration)")
 
 run_migrations()
 
@@ -189,20 +160,28 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     else:
         raise HTTPException(status_code=401, detail=f"Unsupported token algorithm: {alg}")
 
+    # Extract user ID from JWT (Supabase uses 'sub' claim for user UUID)
+    user_id = payload.get("sub")
     email = payload.get("email")
-    if not email:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token: missing user ID")
 
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        fullname = None
-        metadata = payload.get("user_metadata") or {}
-        if isinstance(metadata, dict):
-            fullname = metadata.get("full_name")
-        user = User(email=email, full_name=fullname)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+    # Fetch or create user in database
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            fullname = None
+            metadata = payload.get("user_metadata") or {}
+            if isinstance(metadata, dict):
+                fullname = metadata.get("full_name")
+            user = User(id=user_id, email=email, full_name=fullname)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+    except Exception as e:
+        print(f"[Auth Error] Failed to fetch/create user: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     return user
 
@@ -613,8 +592,11 @@ def add_budget_node(req: dict, current_user: User = Depends(get_current_user), d
     db.commit()
     return {"status": "ok"}
 
+@app.get("/api/user/nodes")
+def get_budget_nodes(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    nodes = db.query(BudgetNode).filter(BudgetNode.user_id == current_user.id).all()
+    return {"nodes": [{"id": n.name, "name": n.name, "percent": n.percent, "color": n.color, "spent": n.spent} for n in nodes]}
 
-# ─────────────────────────────────────────────────────────────────────────────
 #  MARKET PULSE (Alpha Vantage — quick index quote)
 # ─────────────────────────────────────────────────────────────────────────────
 
