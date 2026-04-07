@@ -517,9 +517,39 @@ def get_user_data(current_user: User = Depends(get_current_user), db: Session = 
     portfolio = db.query(PortfolioItem).filter(PortfolioItem.user_id == current_user.id).all()
     
     return {
-        "nodes": nodes,
-        "transactions": txs,
-        "portfolio": portfolio
+        "nodes": [
+            {
+                "id": node.id,
+                "name": node.name,
+                "percent": node.percent,
+                "color": node.color,
+                "spent": node.spent,
+            }
+            for node in nodes
+        ],
+        "transactions": [
+            {
+                "id": tx.id,
+                "title": tx.title,
+                "amount": tx.amount,
+                "category": tx.category,
+                "date": tx.date.isoformat() if tx.date else None,
+                "note": tx.note,
+            }
+            for tx in txs
+        ],
+        "portfolio": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "type": item.type,
+                "invested": item.invested,
+                "current_value": item.current_value,
+                "roi": item.roi,
+                "color": item.color,
+            }
+            for item in portfolio
+        ]
     }
 
 @app.post("/api/user/transaction")
@@ -654,13 +684,17 @@ def get_community_posts(
     
     # Get current user's upvotes
     my_upvotes = db.query(CommunityUpvote.post_id).filter(CommunityUpvote.user_id == current_user.id).all()
-    my_upvote_ids = {u[0] for u in my_upvotes}
+    my_upvote_ids = {str(u[0]) for u in my_upvotes}
     
     return {
         "posts": [
             {
                 "id": str(post.id),
-                "author": post.author.full_name or post.author.email.split('@')[0],
+                "author": (
+                    post.author.full_name
+                    if post.author and post.author.full_name
+                    else (post.author.email.split('@')[0] if post.author and post.author.email else "Anonymous")
+                ),
                 "avatar": "👤",  # Default avatar
                 "title": post.title,
                 "content": post.content,
